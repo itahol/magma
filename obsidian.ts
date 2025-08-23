@@ -1,6 +1,9 @@
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse, Url } from "@effect/platform";
 import { Config, Data, Effect, Either, Schema } from "effect";
 
+export const FolderPathSchema = Schema.String.pipe(Schema.brand("FolderPath"));
+export type FolderPath = Schema.Schema.Type<typeof FolderPathSchema>;
+
 export const NotePathSchema = Schema.String.pipe(Schema.brand("NotePath"));
 export type NotePath = Schema.Schema.Type<typeof NotePathSchema>;
 
@@ -10,6 +13,10 @@ export const NoteSchema = Schema.Struct({
   tags: Schema.Array(Schema.String),
 });
 export type Note = Schema.Schema.Type<typeof NoteSchema>;
+
+export const FolderSchema = Schema.Struct({
+  notes: Schema.propertySignature(Schema.Array(NotePathSchema)).pipe(Schema.fromKey("files")),
+});
 
 export class ObsidianError extends Data.TaggedError("ObsidianError")<{
   cause?: unknown;
@@ -56,7 +63,18 @@ export class Obsidian extends Effect.Service<Obsidian>()("obsidian", {
       );
     });
 
-    return { getNote };
+    const listNotes = Effect.fn("listNotes")(function* (folderPath?: FolderPath) {
+      const encodedFolderPath = folderPath ? encodeURIComponent(folderPath) + "/" : "";
+      const request = HttpClientRequest.get(`/vault/${encodedFolderPath}`).pipe(
+        HttpClientRequest.setHeader("Accept", "application/vnd.olrapi.note-list+json"),
+      );
+      const response = yield* clientWithBaseUrl.execute(request);
+      return yield* HttpClientResponse.schemaBodyJson(FolderSchema)(response).pipe(
+        Effect.catchTag("ParseError", Effect.die),
+      );
+    });
+
+    return { getNote, listNotes };
   }),
   dependencies: [FetchHttpClient.layer],
 }) {}
