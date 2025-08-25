@@ -59,7 +59,9 @@ export class Obsidian extends Effect.Service<Obsidian>()("obsidian", {
     );
 
     const getNote = Effect.fn("getNote")(function* (notePath: NotePath) {
-      const request = HttpClientRequest.get(`/vault/${encodeURIComponent(notePath)}`).pipe(setJsonResponseHeader);
+      const request = HttpClientRequest.get(`/vault/${encodeURIComponent(notePath)}`).pipe(
+        HttpClientRequest.setHeader("Accept", "application/vnd.olrapi.note+json"),
+      );
       const response = yield* clientWithBaseUrl.execute(request).pipe(
         Effect.catchIf(
           (error) => error._tag === "ResponseError" && error.response.status === 404,
@@ -75,7 +77,7 @@ export class Obsidian extends Effect.Service<Obsidian>()("obsidian", {
     const listNotes = Effect.fn("listNotes")(function* (folderPath?: FolderPath) {
       const encodedFolderPath = folderPath ? Schema.encodeSync(FolderPathSchema)(folderPath) : "";
       const request = HttpClientRequest.get(`/vault/${encodeURIComponent(encodedFolderPath)}`).pipe(
-        setJsonResponseHeader,
+        HttpClientRequest.setHeader("Accept", "application/vnd.olrapi.note-list+json"),
       );
       const response = yield* clientWithBaseUrl.execute(request);
       return yield* HttpClientResponse.schemaBodyJson(FolderSchema)(response).pipe(
@@ -87,6 +89,3 @@ export class Obsidian extends Effect.Service<Obsidian>()("obsidian", {
   }),
   dependencies: [FetchHttpClient.layer],
 }) {}
-
-const setJsonResponseHeader: (self: HttpClientRequest.HttpClientRequest) => HttpClientRequest.HttpClientRequest =
-  HttpClientRequest.setHeader("Accept", "application/vnd.olrapi.note-list+json");
