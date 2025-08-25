@@ -1,10 +1,20 @@
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse, Url } from "@effect/platform";
 import { Config, Data, Effect, Either, Schema } from "effect";
 
-export const FolderPathSchema = Schema.String.pipe(Schema.brand("FolderPath"));
+export const FolderPathSchema = Schema.String.pipe(
+  Schema.endsWith("/"),
+  Schema.transform(Schema.String, {
+    decode: (input) => input.slice(0, -1),
+    encode: (input) => input + "/",
+  }),
+  Schema.brand("FolderPath"),
+);
 export type FolderPath = Schema.Schema.Type<typeof FolderPathSchema>;
 
-export const NotePathSchema = Schema.String.pipe(Schema.brand("NotePath"));
+export const NotePathSchema = Schema.String.pipe(
+  Schema.filter((path) => !path.endsWith("/")),
+  Schema.brand("NotePath"),
+);
 export type NotePath = Schema.Schema.Type<typeof NotePathSchema>;
 
 export const NoteSchema = Schema.Struct({
@@ -14,8 +24,10 @@ export const NoteSchema = Schema.Struct({
 });
 export type Note = Schema.Schema.Type<typeof NoteSchema>;
 
+const PathSchema = Schema.Union(FolderPathSchema, NotePathSchema);
+
 export const FolderSchema = Schema.Struct({
-  notes: Schema.propertySignature(Schema.Array(NotePathSchema)).pipe(Schema.fromKey("files")),
+  notes: Schema.propertySignature(Schema.Array(PathSchema)).pipe(Schema.fromKey("files")),
 });
 
 export class ObsidianError extends Data.TaggedError("ObsidianError")<{
@@ -64,8 +76,8 @@ export class Obsidian extends Effect.Service<Obsidian>()("obsidian", {
     });
 
     const listNotes = Effect.fn("listNotes")(function* (folderPath?: FolderPath) {
-      const encodedFolderPath = folderPath ? encodeURIComponent(folderPath) + "/" : "";
-      const request = HttpClientRequest.get(`/vault/${encodedFolderPath}`).pipe(
+      const encodedFolderPath = folderPath ? Schema.encodeSync(FolderPathSchema)(folderPath) : "";
+      const request = HttpClientRequest.get(`/vault/${encodeURIComponent(encodedFolderPath)}`).pipe(
         HttpClientRequest.setHeader("Accept", "application/vnd.olrapi.note-list+json"),
       );
       const response = yield* clientWithBaseUrl.execute(request);

@@ -9,7 +9,7 @@ const program = Effect.gen(function* () {
   const obsidian = yield* Obsidian;
   const rootNotes = yield* obsidian.listNotes();
   yield* Console.log(`Root notes: ${FolderPrinter(rootNotes)}`);
-  const projectNotes = yield* obsidian.listNotes(Schema.decodeUnknownSync(FolderPathSchema)("1 Projects"));
+  const projectNotes = yield* obsidian.listNotes(Schema.decodeUnknownSync(FolderPathSchema)("1 Projects/"));
   yield* Console.log(`Project notes: ${FolderPrinter(projectNotes)}`);
   const note = yield* obsidian.getNote(
     Schema.decodeUnknownSync(NotePathSchema)("3 Resources/Access Framework Flow.md"),
