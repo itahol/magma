@@ -46,7 +46,6 @@ export class NoteDoesNotExistError extends Data.TaggedError("NoteDoesNotExistErr
 }
 
 export class Obsidian extends Effect.Service<Obsidian>()("obsidian", {
-  // Define how to create the service
   effect: Effect.gen(function* () {
     const url = yield* Config.string("OBSIDIAN_API_URL");
     const port = yield* Config.integer("OBSIDIAN_API_PORT");
