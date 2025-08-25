@@ -1,9 +1,11 @@
 import { BunContext, BunRuntime } from "@effect/platform-bun";
 import { Console, Effect, Layer, Pretty, Schema } from "effect";
+import * as Chroma from "./chroma";
 import { FolderPathSchema, FolderSchema, NotePathSchema, NoteSchema, Obsidian } from "./obsidian";
 
 const FolderPrinter = Pretty.make(FolderSchema);
 const NotePrinter = Pretty.make(NoteSchema);
+const CollectionsPrinter = Pretty.make(Schema.Array(Chroma.CollectionSchema));
 
 const program = Effect.gen(function* () {
   const obsidian = yield* Obsidian;
@@ -14,7 +16,15 @@ const program = Effect.gen(function* () {
   const note = yield* obsidian.getNote(
     Schema.decodeUnknownSync(NotePathSchema)("3 Resources/Access Framework Flow.md"),
   );
-  return yield* Console.log(`Note: ${NotePrinter(note)}`);
+  yield* Console.log(`Note: ${NotePrinter(note)}`);
+
+  const collections = yield* Chroma.listCollections;
+  yield* Console.log(`Collections: ${CollectionsPrinter(collections)}`);
+  const collectionName = collections.at(0)?.name;
+  if (collectionName) {
+    const collection = yield* Chroma.getCollection(collectionName);
+    yield* Console.log(`First collection: ${Pretty.make(Chroma.CollectionSchema)(collection)}`);
+  }
 });
 
-BunRuntime.runMain(program.pipe(Effect.provide(Layer.mergeAll(BunContext.layer, Obsidian.Default))));
+BunRuntime.runMain(program.pipe(Effect.provide(Layer.mergeAll(BunContext.layer, Obsidian.Default, Chroma.fromEnv))));
