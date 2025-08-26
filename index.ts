@@ -1,11 +1,12 @@
 import { BunContext, BunRuntime } from "@effect/platform-bun";
-import { Console, Effect, Layer, Pretty, Schema } from "effect";
+import { Array, Console, Effect, Layer, Pretty, Schema } from "effect";
 import * as Chroma from "./chroma";
-import { FolderPathSchema, FolderSchema, NotePathSchema, NoteSchema, Obsidian } from "./obsidian";
+import { FolderPathSchema, NotePathSchema, NoteSchema, Obsidian, PathSchema } from "./obsidian";
 
-const FolderPrinter = Pretty.make(FolderSchema);
+const FolderPrinter = Pretty.make(Schema.Array(PathSchema));
 const NotePrinter = Pretty.make(NoteSchema);
 const CollectionsPrinter = Pretty.make(Schema.Array(Chroma.CollectionSchema));
+const isNotePath = Schema.is(NotePathSchema);
 
 const program = Effect.gen(function* () {
   const obsidian = yield* Obsidian;
@@ -13,10 +14,12 @@ const program = Effect.gen(function* () {
   yield* Console.log(`Root contents: ${FolderPrinter(rootContents)}`);
   const projectContents = yield* obsidian.listFolder(Schema.decodeUnknownSync(FolderPathSchema)("1 Projects/"));
   yield* Console.log(`Project contents: ${FolderPrinter(projectContents)}`);
-  const note = yield* obsidian.getNote(
-    Schema.decodeUnknownSync(NotePathSchema)("3 Resources/Access Framework Flow.md"),
+  const notesPaths = Array.filter(projectContents, isNotePath);
+  yield* Effect.all(
+    notesPaths
+      .map((path) => obsidian.getNote(path))
+      .map(Effect.tap((note) => Console.log(`\nNote at "${note.path}": ${NotePrinter(note)}`))),
   );
-  yield* Console.log(`Note: ${NotePrinter(note)}`);
 
   const collections = yield* Chroma.listCollections;
   yield* Console.log(`Collections: ${CollectionsPrinter(collections)}`);

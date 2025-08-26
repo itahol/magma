@@ -24,10 +24,10 @@ export const NoteSchema = Schema.Struct({
 });
 export type Note = Schema.Schema.Type<typeof NoteSchema>;
 
-const PathSchema = Schema.Union(FolderPathSchema, NotePathSchema);
+export const PathSchema = Schema.Union(FolderPathSchema, NotePathSchema);
 
-export const FolderSchema = Schema.Struct({
-  notes: Schema.propertySignature(Schema.Array(PathSchema)).pipe(Schema.fromKey("files")),
+const FolderListingResponseSchema = Schema.Struct({
+  files: Schema.Array(Schema.String),
 });
 
 export class ObsidianError extends Data.TaggedError("ObsidianError")<{
@@ -79,10 +79,15 @@ export class Obsidian extends Effect.Service<Obsidian>()("obsidian", {
       const request = HttpClientRequest.get(`/vault/${encodeURIComponent(encodedFolderPath)}`).pipe(
         HttpClientRequest.setHeader("Accept", "application/vnd.olrapi.note-list+json"),
       );
-      const response = yield* clientWithBaseUrl.execute(request);
-      return yield* HttpClientResponse.schemaBodyJson(FolderSchema)(response).pipe(
-        Effect.catchTag("ParseError", Effect.die),
-      );
+      const response = yield* clientWithBaseUrl.execute(request).pipe(Effect.catchTag("ResponseError", Effect.die));
+
+      return yield* HttpClientResponse.schemaBodyJson(FolderListingResponseSchema)(response)
+        .pipe(
+          Effect.flatMap((listing) =>
+            Schema.decode(Schema.Array(PathSchema))(listing.files.map((path) => `${encodedFolderPath}${path}`)),
+          ),
+        )
+        .pipe(Effect.catchTag("ParseError", Effect.die));
     });
 
     return { getNote, listFolder };
