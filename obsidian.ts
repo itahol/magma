@@ -74,7 +74,7 @@ export class Obsidian extends Effect.Service<Obsidian>()("obsidian", {
       );
     });
 
-    const listNotes = Effect.fn("listNotes")(function* (folderPath?: FolderPath) {
+    const listFolder = Effect.fn("listFolder")(function* (folderPath?: FolderPath) {
       const encodedFolderPath = folderPath ? Schema.encodeSync(FolderPathSchema)(folderPath) : "";
       const request = HttpClientRequest.get(`/vault/${encodeURIComponent(encodedFolderPath)}`).pipe(
         HttpClientRequest.setHeader("Accept", "application/vnd.olrapi.note-list+json"),
@@ -85,7 +85,7 @@ export class Obsidian extends Effect.Service<Obsidian>()("obsidian", {
       );
     });
 
-    return { getNote, listNotes };
+    return { getNote, listFolder };
   }),
   dependencies: [FetchHttpClient.layer],
 }) {}

@@ -9,10 +9,10 @@ const CollectionsPrinter = Pretty.make(Schema.Array(Chroma.CollectionSchema));
 
 const program = Effect.gen(function* () {
   const obsidian = yield* Obsidian;
-  const rootNotes = yield* obsidian.listNotes();
-  yield* Console.log(`Root notes: ${FolderPrinter(rootNotes)}`);
-  const projectNotes = yield* obsidian.listNotes(Schema.decodeUnknownSync(FolderPathSchema)("1 Projects/"));
-  yield* Console.log(`Project notes: ${FolderPrinter(projectNotes)}`);
+  const rootContents = yield* obsidian.listFolder();
+  yield* Console.log(`Root contents: ${FolderPrinter(rootContents)}`);
+  const projectContents = yield* obsidian.listFolder(Schema.decodeUnknownSync(FolderPathSchema)("1 Projects/"));
+  yield* Console.log(`Project contents: ${FolderPrinter(projectContents)}`);
   const note = yield* obsidian.getNote(
     Schema.decodeUnknownSync(NotePathSchema)("3 Resources/Access Framework Flow.md"),
   );
