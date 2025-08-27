@@ -45,6 +45,16 @@ export class NoteDoesNotExistError extends Data.TaggedError("NoteDoesNotExistErr
   }
 }
 
+export class FolderDoesNotExistError extends Data.TaggedError("FolderDoesNotExistError")<{
+  folderPath: FolderPath | undefined;
+  cause?: unknown;
+  message?: string;
+}> {
+  constructor(props: { folderPath: FolderPath | undefined; cause?: unknown }) {
+    super({ ...props, message: `Folder at "${props.folderPath}" does not exist` });
+  }
+}
+
 export class Obsidian extends Effect.Service<Obsidian>()("obsidian", {
   effect: Effect.gen(function* () {
     const url = yield* Config.string("OBSIDIAN_API_URL");
@@ -58,39 +68,53 @@ export class Obsidian extends Effect.Service<Obsidian>()("obsidian", {
       HttpClient.mapRequest(HttpClientRequest.bearerToken(apiToken)),
     );
 
-    const getNote = Effect.fn("getNote")(function* (notePath: NotePath) {
+    const getNote = Effect.fn("getNote")(function (notePath: NotePath) {
       const request = HttpClientRequest.get(`/vault/${encodeURIComponent(notePath)}`).pipe(
         HttpClientRequest.setHeader("Accept", "application/vnd.olrapi.note+json"),
       );
-      const response = yield* clientWithBaseUrl.execute(request).pipe(
-        Effect.catchIf(
-          (error) => error._tag === "ResponseError" && error.response.status === 404,
-          (error) => Effect.fail(new NoteDoesNotExistError({ notePath, cause: error })),
-        ),
-      );
-
-      return yield* HttpClientResponse.schemaBodyJson(NoteSchema)(response).pipe(
-        Effect.catchTag("ParseError", Effect.die),
+      const response = clientWithBaseUrl.execute(request);
+      return response.pipe(
+        Effect.flatMap(HttpClientResponse.schemaBodyJson(NoteSchema)),
+        Effect.catchTags({
+          ParseError: (cause) => new ObsidianError({ cause, message: `Failed to parse note at "${notePath}"` }),
+          RequestError: (cause) => new ObsidianError({ cause, message: `Failed to fetch note at "${notePath}"` }),
+          ResponseError: (cause) => {
+            if (cause.response.status === 404) {
+              return new NoteDoesNotExistError({ notePath, cause });
+            }
+            return new ObsidianError({ cause, message: `Failed to fetch note at "${notePath}"` });
+          },
+        }),
       );
     });
 
-    const listFolder = Effect.fn("listFolder")(function* (folderPath?: FolderPath) {
-      const encodedFolderPath = folderPath ? Schema.encodeSync(FolderPathSchema)(folderPath) : "";
-      const request = HttpClientRequest.get(`/vault/${encodeURIComponent(encodedFolderPath)}`).pipe(
+    const listFolder = Effect.fn("listFolder")(function (folderPath?: FolderPath) {
+      const targetPath = folderPath ? Schema.encodeSync(FolderPathSchema)(folderPath) : "";
+      const request = HttpClientRequest.get(`/vault/${encodeURIComponent(targetPath)}`).pipe(
         HttpClientRequest.setHeader("Accept", "application/vnd.olrapi.note-list+json"),
       );
-      const response = yield* clientWithBaseUrl.execute(request).pipe(Effect.catchTag("ResponseError", Effect.die));
-
-      return yield* HttpClientResponse.schemaBodyJson(FolderListingResponseSchema)(response)
-        .pipe(
-          Effect.flatMap((listing) =>
-            Schema.decode(Schema.Array(PathSchema))(listing.files.map((path) => `${encodedFolderPath}${path}`)),
-          ),
-        )
-        .pipe(Effect.catchTag("ParseError", Effect.die));
+      const parsed = clientWithBaseUrl.execute(request).pipe(
+        Effect.flatMap(HttpClientResponse.schemaBodyJson(FolderListingResponseSchema)),
+        Effect.catchTags({
+          ParseError: (cause) =>
+            new ObsidianError({ cause, message: `Failed to parse folder listing at "${targetPath}"` }),
+          RequestError: (cause) => new ObsidianError({ cause, message: `Failed to fetch folder listing` }),
+          ResponseError: (cause) => {
+            if (cause.response.status === 404) {
+              return new FolderDoesNotExistError({ folderPath, cause });
+            }
+            return new ObsidianError({ cause, message: `Failed to fetch folder listing at "${targetPath}"` });
+          },
+        }),
+      );
+      return parsed.pipe(
+        Effect.map(({ files }) => files.map((path) => `${targetPath}${path}`)),
+        Effect.flatMap(Schema.decode(Schema.Array(PathSchema))),
+        Effect.catchTag("ParseError", Effect.orDie),
+      );
     });
 
     return { getNote, listFolder };
-  }),
+  }).pipe(Effect.orDie),
   dependencies: [FetchHttpClient.layer],
 }) {}
