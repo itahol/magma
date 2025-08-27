@@ -1,4 +1,4 @@
-import { ChromaClient } from "chromadb";
+import { ChromaClient, type Collection as ChromaCollection } from "chromadb";
 import { Config, Context, Data, Effect, Layer, Schema } from "effect";
 
 // Single regex: starts and ends with [a-zA-Z0-9], only [a-zA-Z0-9._-] in between
@@ -34,6 +34,10 @@ export class ChromaError extends Data.TaggedError("ChromaError")<{
 
 interface ChromaImpl {
   use: <T>(fn: (client: ChromaClient) => T) => Effect.Effect<Awaited<T>, ChromaError, never>;
+  useCollection: <T>(
+    collection: ChromaCollection,
+    fn: (collection: ChromaCollection) => T,
+  ) => Effect.Effect<Awaited<T>, ChromaError, never>;
 }
 export class Chroma extends Context.Tag("Chroma")<Chroma, ChromaImpl>() {}
 
@@ -50,6 +54,29 @@ export const make = (options: ConstructorArgs<typeof ChromaClient>[0]) =>
         Effect.gen(function* () {
           const result = yield* Effect.try({
             try: () => fn(client),
+            catch: (e) =>
+              new ChromaError({
+                cause: e,
+                message: "Syncronous error in `Chroma.use`",
+              }),
+          });
+          if (result instanceof Promise) {
+            return yield* Effect.tryPromise({
+              try: () => result,
+              catch: (e) =>
+                new ChromaError({
+                  cause: e,
+                  message: "Asyncronous error in `Chroma.use`",
+                }),
+            });
+          } else {
+            return result;
+          }
+        }),
+      useCollection: (collection, fn) =>
+        Effect.gen(function* () {
+          const result = yield* Effect.try({
+            try: () => fn(collection),
             catch: (e) =>
               new ChromaError({
                 cause: e,

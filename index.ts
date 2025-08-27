@@ -1,7 +1,7 @@
 import { BunContext, BunRuntime } from "@effect/platform-bun";
 import { Array, Console, Effect, Layer, Pretty, Schema } from "effect";
 import * as Chroma from "./chroma";
-import { FolderPathSchema, NotePathSchema, NoteSchema, Obsidian, PathSchema } from "./obsidian";
+import { NotePathSchema, NoteSchema, Obsidian, PathSchema, type NotePath } from "./obsidian";
 
 const FolderPrinter = Pretty.make(Schema.Array(PathSchema));
 const NotePrinter = Pretty.make(NoteSchema);
@@ -11,14 +11,25 @@ const isNotePath = Schema.is(NotePathSchema);
 const program = Effect.gen(function* () {
   const obsidian = yield* Obsidian;
   const rootContents = yield* obsidian.listFolder();
-  yield* Console.log(`Root contents: ${FolderPrinter(rootContents)}`);
-  const projectContents = yield* obsidian.listFolder(Schema.decodeUnknownSync(FolderPathSchema)("1 Projects/"));
-  yield* Console.log(`Project contents: ${FolderPrinter(projectContents)}`);
-  const notesPaths = Array.filter(projectContents, isNotePath);
-  yield* Effect.all(
-    notesPaths
-      .map((path) => obsidian.getNote(path))
-      .map(Effect.tap((note) => Console.log(`\nNote at "${note.path}": ${NotePrinter(note)}`))),
+
+  const chromaClient = yield* Chroma.Chroma;
+  const obsidianCollection = chromaClient.use((c) => c.getOrCreateCollection({ name: "obsidian_notes" }));
+  yield* Effect.log("Got chroma collection");
+  const rootNotesPaths = Array.filter(rootContents, isNotePath);
+  const rootNotes = yield* Effect.forEach(rootNotesPaths, (path) => obsidian.getNote(path));
+  yield* Effect.log("Fetched root notes");
+  const reduced = rootNotes.reduce(
+    (acc: { ids: NotePath[]; metadatas: Record<string, boolean>[]; contents: string[] }, note) => {
+      const metadata = Object.fromEntries(note.tags.map((tag) => [`tag:${tag}`, true]));
+      acc.ids.push(note.path);
+      acc.contents.push(note.content);
+      acc.metadatas.push(metadata);
+      return acc;
+    },
+    { ids: [], metadatas: [], contents: [] },
+  );
+  yield* obsidianCollection.pipe(
+    Effect.flatMap((c) => chromaClient.useCollection(c, (collection) => collection.upsert(reduced))),
   );
 
   const collections = yield* Chroma.listCollections;
