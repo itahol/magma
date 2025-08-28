@@ -1,6 +1,26 @@
 import { ChromaClient, type Collection as ChromaCollection } from "chromadb";
 import { Config, Context, Data, Effect, Layer, Schema } from "effect";
 
+/**
+ * Schema for Metadata.
+ * - A record mapping string keys to boolean values.
+ */
+export const MetadataSchema = Schema.Record({ key: Schema.String, value: Schema.Boolean });
+export type Metadata = Schema.Schema.Type<typeof MetadataSchema>;
+
+/**
+ * Schema for BaseRecordSet.
+ * - ids: array of strings
+ * - metadatas: array of Metadata
+ * - documents: array of strings
+ */
+export const BaseRecordSetSchema = Schema.Struct({
+  ids: Schema.Array(Schema.String),
+  metadatas: Schema.Array(MetadataSchema),
+  documents: Schema.Array(Schema.String),
+});
+export type BaseRecordSet = Schema.Schema.Type<typeof BaseRecordSetSchema>;
+
 // Single regex: starts and ends with [a-zA-Z0-9], only [a-zA-Z0-9._-] in between
 const collectionNamePattern = /^[a-zA-Z0-9](?:[a-zA-Z0-9._-]*[a-zA-Z0-9])?$/;
 

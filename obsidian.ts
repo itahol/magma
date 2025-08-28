@@ -1,14 +1,7 @@
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse, Url } from "@effect/platform";
 import { Config, Data, Effect, Either, Schema } from "effect";
 
-export const FolderPathSchema = Schema.String.pipe(
-  Schema.endsWith("/"),
-  Schema.transform(Schema.String, {
-    decode: (input) => input.slice(0, -1),
-    encode: (input) => input + "/",
-  }),
-  Schema.brand("FolderPath"),
-);
+export const FolderPathSchema = Schema.String.pipe(Schema.endsWith("/"), Schema.brand("FolderPath"));
 export type FolderPath = Schema.Schema.Type<typeof FolderPathSchema>;
 
 export const NotePathSchema = Schema.String.pipe(
