@@ -1,11 +1,23 @@
 import { BunContext, BunRuntime } from "@effect/platform-bun";
-import { Array, Console, Effect, Layer, Pretty, Schema } from "effect";
+import type { Collection } from "chromadb";
+import { Array, Chunk, Effect, Layer, Option, Schema, Stream } from "effect";
 import * as Chroma from "./chroma";
-import { NotePathSchema, Obsidian, PathSchema, type Note, type NotePath } from "./obsidian";
+import { NotePathSchema, Obsidian, type FolderPath, type Note, type NotePath } from "./obsidian";
 
-const FolderPrinter = Pretty.make(Schema.Array(PathSchema));
-const CollectionsPrinter = Pretty.make(Schema.Array(Chroma.CollectionSchema));
 const isNotePath = Schema.is(NotePathSchema);
+
+const listTree = (root?: FolderPath) =>
+  Stream.paginateEffect([root], (folders) =>
+    Effect.gen(function* () {
+      const obsidian = yield* Obsidian;
+      const contents = yield* Effect.forEach(folders, obsidian.listFolder, { concurrency: "unbounded" }).pipe(
+        Effect.map((listing) => listing.flat()),
+      );
+      const [childFoldersPaths, childNotesPaths] = Array.partition(contents, isNotePath);
+      const nextFolders = Option.as(Option.fromIterable(childFoldersPaths), childFoldersPaths);
+      return [childNotesPaths, nextFolders];
+    }),
+  ).pipe(Stream.flattenIterables);
 
 function extractNoteMetdata(note: Note) {
   if (note.tags.length === 0) {
@@ -38,37 +50,42 @@ function prepareNotes(notes: Note[], noteMetadataExtractor: (note: Note) => Reco
   return { withMetadata, withoutMetadata };
 }
 
+const upsertChunk = Effect.fn("upsertChunk")(function* <E, R>(
+  chunk: Chunk.Chunk<Note>,
+  collection: Effect.Effect<Collection, E, R>,
+) {
+  const chromaClient = yield* Chroma.Chroma;
+  yield* Effect.logDebug(`Upserting chunk of ${Chunk.size(chunk)} notes...`);
+  const { withMetadata, withoutMetadata } = prepareNotes(Chunk.toArray(chunk), extractNoteMetdata);
+  yield* Effect.logDebug(
+    `Prepared notes: ${withMetadata.ids.length} with metadata, ${withoutMetadata.ids.length} without metadata`,
+  );
+  if (withMetadata.ids.length !== 0) {
+    yield* collection.pipe(
+      Effect.flatMap((c) => chromaClient.useCollection(c, (collection) => collection.upsert(withMetadata))),
+    );
+    yield* Effect.logDebug("Upserted notes with metadata to chroma collection");
+  }
+  if (withoutMetadata.ids.length !== 0) {
+    yield* collection.pipe(
+      Effect.flatMap((c) => chromaClient.useCollection(c, (collection) => collection.upsert(withoutMetadata))),
+    );
+    yield* Effect.logDebug("Upserted notes without metadata to chroma collection");
+  }
+});
+
 const program = Effect.gen(function* () {
   const obsidian = yield* Obsidian;
-  const rootContents = yield* obsidian.listFolder();
-
+  yield* Effect.log("Listing all notes in vault...");
   const chromaClient = yield* Chroma.Chroma;
   const obsidianCollection = chromaClient.use((c) => c.getOrCreateCollection({ name: "obsidian_notes" }));
-  yield* Effect.log("Got chroma collection");
-  yield* Effect.log(`Root contents: ${FolderPrinter(rootContents)}`);
-  const rootNotesPaths = Array.filter(rootContents, isNotePath);
-  yield* Effect.log(`Root notes paths: ${FolderPrinter(rootNotesPaths)}`);
-  const rootNotes = yield* Effect.forEach(rootNotesPaths, (path) => obsidian.getNote(path));
-  yield* Effect.log("Fetched root notes");
-
-  const { withMetadata, withoutMetadata } = prepareNotes(rootNotes, extractNoteMetdata);
-
-  yield* obsidianCollection.pipe(
-    Effect.flatMap((c) => chromaClient.useCollection(c, (collection) => collection.upsert(withMetadata))),
+  yield* listTree().pipe(
+    Stream.tap((notePath) => Effect.log(`Found note path: ${notePath}`)),
+    Stream.mapEffect((notePath) => obsidian.getNote(notePath)),
+    Stream.grouped(10),
+    Stream.mapEffect((chunk) => upsertChunk(chunk, obsidianCollection), { concurrency: "unbounded" }),
+    Stream.runDrain,
   );
-  yield* Effect.log("Upserted notes with metadata to chroma collection");
-  yield* obsidianCollection.pipe(
-    Effect.flatMap((c) => chromaClient.useCollection(c, (collection) => collection.upsert(withoutMetadata))),
-  );
-  yield* Effect.log("Upserted notes to chroma collection");
-
-  const collections = yield* Chroma.listCollections;
-  yield* Console.log(`Collections: ${CollectionsPrinter(collections)}`);
-  const collectionName = collections.at(0)?.name;
-  if (collectionName) {
-    const collection = yield* Chroma.getCollection(collectionName);
-    yield* Console.log(`First collection: ${Pretty.make(Chroma.CollectionSchema)(collection)}`);
-  }
 }).pipe(Effect.withSpan("main"));
 
 BunRuntime.runMain(program.pipe(Effect.provide(Layer.mergeAll(BunContext.layer, Obsidian.Default, Chroma.fromEnv))));
