@@ -1,8 +1,8 @@
 {
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
   "categories": {
     "correctness": "error",
     "perf": "warn",
-    "suspicious": "warn",
-    "style": "info"
+    "suspicious": "warn"
   }
 }
