@@ -2,7 +2,7 @@ import { BunContext, BunRuntime } from "@effect/platform-bun";
 import type { Collection } from "chromadb";
 import { Array, Chunk, Effect, Layer, Option, Schema, Stream } from "effect";
 import * as Chroma from "./chroma";
-import { NotePathSchema, Obsidian, type FolderPath, type Note, type NotePath } from "./obsidian";
+import { type FolderPath, type Note, type NotePath, NotePathSchema, Obsidian } from "./obsidian";
 
 const isNotePath = Schema.is(NotePathSchema);
 
