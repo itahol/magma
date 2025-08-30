@@ -1,14 +1,42 @@
 import { BunContext, BunRuntime } from "@effect/platform-bun";
 import { Array, Console, Effect, Layer, Pretty, Schema } from "effect";
 import * as Chroma from "./chroma";
-import { BaseRecordSetSchema } from "./chroma";
-import { NotePathSchema, NoteSchema, Obsidian, PathSchema, type NotePath } from "./obsidian";
+import { NotePathSchema, Obsidian, PathSchema, type Note, type NotePath } from "./obsidian";
 
 const FolderPrinter = Pretty.make(Schema.Array(PathSchema));
-const NotePrinter = Pretty.make(NoteSchema);
 const CollectionsPrinter = Pretty.make(Schema.Array(Chroma.CollectionSchema));
-const BaseRecordSetPrinter = Pretty.make(BaseRecordSetSchema);
 const isNotePath = Schema.is(NotePathSchema);
+
+function extractNoteMetdata(note: Note) {
+  if (note.tags.length === 0) {
+    return undefined;
+  }
+  return Object.fromEntries(note.tags.map((tag) => [`tag:${tag}`, true]));
+}
+
+function prepareNotes(notes: Note[], noteMetadataExtractor: (note: Note) => Record<string, boolean> | undefined) {
+  const withMetadata: { ids: NotePath[]; metadatas: Record<string, boolean>[]; documents: string[] } = {
+    ids: [],
+    metadatas: [],
+    documents: [],
+  };
+  const withoutMetadata: { ids: NotePath[]; documents: string[] } = {
+    ids: [],
+    documents: [],
+  };
+  for (const note of notes) {
+    const metadata = noteMetadataExtractor(note);
+    if (metadata !== undefined) {
+      withMetadata.ids.push(note.path);
+      withMetadata.documents.push(note.content);
+      withMetadata.metadatas.push(metadata);
+    } else {
+      withoutMetadata.ids.push(note.path);
+      withoutMetadata.documents.push(note.content);
+    }
+  }
+  return { withMetadata, withoutMetadata };
+}
 
 const program = Effect.gen(function* () {
   const obsidian = yield* Obsidian;
@@ -23,31 +51,14 @@ const program = Effect.gen(function* () {
   const rootNotes = yield* Effect.forEach(rootNotesPaths, (path) => obsidian.getNote(path));
   yield* Effect.log("Fetched root notes");
 
-  const [withoutMetadata, withMetadata] = Array.partition(rootNotes, (note) => note.tags.length > 0);
-  const reduced = withMetadata.reduce(
-    (acc: { ids: NotePath[]; metadatas: Record<string, boolean>[]; documents: string[] }, note) => {
-      const metadata = Object.fromEntries(note.tags.map((tag) => [`tag:${tag}`, true]));
-      acc.ids.push(note.path);
-      acc.documents.push(note.content);
-      acc.metadatas.push(metadata);
-      return acc;
-    },
-    { ids: [], metadatas: [], documents: [] },
-  );
-  yield* Effect.log(`Reduced notes: ${BaseRecordSetPrinter(reduced)}`);
+  const { withMetadata, withoutMetadata } = prepareNotes(rootNotes, extractNoteMetdata);
+
   yield* obsidianCollection.pipe(
-    Effect.flatMap((c) => chromaClient.useCollection(c, (collection) => collection.upsert(reduced))),
+    Effect.flatMap((c) => chromaClient.useCollection(c, (collection) => collection.upsert(withMetadata))),
   );
-  const reducedWithoutMetadata = withoutMetadata.reduce(
-    (acc: { ids: NotePath[]; documents: string[] }, note) => {
-      acc.ids.push(note.path);
-      acc.documents.push(note.content);
-      return acc;
-    },
-    { ids: [], documents: [] },
-  );
+  yield* Effect.log("Upserted notes with metadata to chroma collection");
   yield* obsidianCollection.pipe(
-    Effect.flatMap((c) => chromaClient.useCollection(c, (collection) => collection.upsert(reducedWithoutMetadata))),
+    Effect.flatMap((c) => chromaClient.useCollection(c, (collection) => collection.upsert(withoutMetadata))),
   );
   yield* Effect.log("Upserted notes to chroma collection");
 
