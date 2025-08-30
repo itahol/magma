@@ -8,6 +8,7 @@
     "fix": "oxlint --fix"
   },
   "devDependencies": {
+    "@effect/language-service": "^0.36.0",
     "@types/bun": "latest",
     "oxlint": "^1.12.0"
   },
