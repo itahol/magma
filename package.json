@@ -17,7 +17,13 @@
   },
   "dependencies": {
     "@chroma-core/default-embed": "^0.1.8",
+    "@effect/opentelemetry": "^0.56.4",
     "@effect/platform-bun": "^0.79.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.203.0",
+    "@opentelemetry/sdk-metrics": "^2.0.1",
+    "@opentelemetry/sdk-trace-base": "^2.0.1",
+    "@opentelemetry/sdk-trace-node": "^2.0.1",
+    "@opentelemetry/sdk-trace-web": "^2.0.1",
     "chromadb": "^3.0.14",
     "effect": "^3.17.9"
   },

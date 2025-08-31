@@ -1,5 +1,8 @@
 import { DefaultEmbeddingFunction } from "@chroma-core/default-embed";
+import { NodeSdk } from "@effect/opentelemetry";
 import { BunContext, BunRuntime } from "@effect/platform-bun";
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
+import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base";
 import type { Collection, EmbeddingFunction } from "chromadb";
 import { Array, Chunk, Config, Effect, Layer, Option, Schema, Stream } from "effect";
 import * as Chroma from "./chroma";
@@ -74,6 +77,10 @@ const upsertChunk = Effect.fn("upsertChunk")(function* <E, R>(
     );
     yield* Effect.logDebug("Upserted notes without metadata to chroma collection");
   }
+  yield* Effect.annotateCurrentSpan({
+    withMetadataCount: withMetadata.ids.length,
+    withoutMetadataCount: withoutMetadata.ids.length,
+  });
 });
 
 const loadEmbeddingFunction = Effect.fn("loadEmbeddingFunction")((embeddingFunction: EmbeddingFunction) =>
@@ -107,4 +114,11 @@ const program = Effect.gen(function* () {
   );
 }).pipe(Effect.withSpan("main"));
 
-BunRuntime.runMain(program.pipe(Effect.provide(Layer.mergeAll(BunContext.layer, Obsidian.Default, Chroma.fromEnv))));
+const NodeSdkLive = NodeSdk.layer(() => ({
+  resource: { serviceName: "magma" },
+  spanProcessor: new BatchSpanProcessor(new OTLPTraceExporter()),
+}));
+
+BunRuntime.runMain(
+  program.pipe(Effect.provide(Layer.mergeAll(BunContext.layer, NodeSdkLive, Obsidian.Default, Chroma.fromEnv))),
+);
