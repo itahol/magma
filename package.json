@@ -20,5 +20,12 @@
     "@effect/platform-bun": "^0.79.0",
     "chromadb": "^3.0.14",
     "effect": "^3.17.9"
-  }
+  },
+  "trustedDependencies": [
+    "@parcel/watcher",
+    "msgpackr-extract",
+    "onnxruntime-node",
+    "protobufjs",
+    "sharp"
+  ]
 }
