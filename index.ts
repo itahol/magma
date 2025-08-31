@@ -100,7 +100,7 @@ const program = Effect.gen(function* () {
   );
   yield* listTree().pipe(
     Stream.tap((notePath) => Effect.log(`Found note path: ${notePath}`)),
-    Stream.mapEffect((notePath) => obsidian.getNote(notePath)),
+    Stream.mapEffect((notePath) => obsidian.getNote(notePath), { concurrency: "unbounded" }),
     Stream.grouped(10),
     Stream.mapEffect((chunk) => upsertChunk(chunk, obsidianCollection), { concurrency: "unbounded" }),
     Stream.runDrain,
