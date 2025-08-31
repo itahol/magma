@@ -1,7 +1,9 @@
+import { DefaultEmbeddingFunction } from "@chroma-core/default-embed";
 import { BunContext, BunRuntime } from "@effect/platform-bun";
-import type { Collection } from "chromadb";
+import type { Collection, EmbeddingFunction } from "chromadb";
 import { Array, Chunk, Effect, Layer, Option, Schema, Stream } from "effect";
 import * as Chroma from "./chroma";
+import { ChromaError } from "./chroma";
 import { type FolderPath, type Note, type NotePath, NotePathSchema, Obsidian } from "./obsidian";
 
 const isNotePath = Schema.is(NotePathSchema);
@@ -74,11 +76,22 @@ const upsertChunk = Effect.fn("upsertChunk")(function* <E, R>(
   }
 });
 
+const loadEmbeddingFunction = Effect.fn("loadEmbeddingFunction")((embeddingFunction: EmbeddingFunction) =>
+  Effect.tryPromise({
+    try: () => embeddingFunction.generate(["foo"]),
+    catch: (cause) => new ChromaError({ message: "Failed to load model", cause }),
+  }),
+);
+
 const program = Effect.gen(function* () {
   const obsidian = yield* Obsidian;
   yield* Effect.log("Listing all notes in vault...");
   const chromaClient = yield* Chroma.Chroma;
-  const obsidianCollection = chromaClient.use((c) => c.getOrCreateCollection({ name: "obsidian_notes" }));
+  const embeddingFunction = new DefaultEmbeddingFunction();
+  yield* loadEmbeddingFunction(embeddingFunction);
+  const obsidianCollection = chromaClient.use((c) =>
+    c.getOrCreateCollection({ name: "obsidian_notes", embeddingFunction }),
+  );
   yield* listTree().pipe(
     Stream.tap((notePath) => Effect.log(`Found note path: ${notePath}`)),
     Stream.mapEffect((notePath) => obsidian.getNote(notePath)),
