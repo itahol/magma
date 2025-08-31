@@ -1,7 +1,7 @@
 import { DefaultEmbeddingFunction } from "@chroma-core/default-embed";
 import { BunContext, BunRuntime } from "@effect/platform-bun";
 import type { Collection, EmbeddingFunction } from "chromadb";
-import { Array, Chunk, Effect, Layer, Option, Schema, Stream } from "effect";
+import { Array, Chunk, Config, Effect, Layer, Option, Schema, Stream } from "effect";
 import * as Chroma from "./chroma";
 import { ChromaError } from "./chroma";
 import { type FolderPath, type Note, type NotePath, NotePathSchema, Obsidian } from "./obsidian";
@@ -87,7 +87,13 @@ const program = Effect.gen(function* () {
   const obsidian = yield* Obsidian;
   yield* Effect.log("Listing all notes in vault...");
   const chromaClient = yield* Chroma.Chroma;
-  const embeddingFunction = new DefaultEmbeddingFunction();
+  const embeddingModelName = yield* Config.string("EMBEDDING_MODEL_NAME").pipe(Config.option);
+  const embeddingFunction = embeddingModelName.pipe(
+    Option.match({
+      onSome: (modelName) => new DefaultEmbeddingFunction({ modelName }),
+      onNone: () => new DefaultEmbeddingFunction(),
+    }),
+  );
   yield* loadEmbeddingFunction(embeddingFunction);
   const obsidianCollection = chromaClient.use((c) =>
     c.getOrCreateCollection({ name: "obsidian_notes", embeddingFunction }),
